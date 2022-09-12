@@ -490,10 +490,18 @@ INLINE void can_frame_set_uref(can_frame_t *frame, void *ref)
 }
 
 /// @brief Read a 32-bit endian word into a uint32_t
-#define CAN_READ_BIG_ENDIAN_WORD(buf)        ((((uint32_t)(buf)[0]) << 24) |  \
-                                             (((uint32_t)(buf)[1]) << 16) |  \
-                                             (((uint32_t)(buf)[2]) << 8) |  \
-                                             ((uint32_t)(buf)[3]))
+#define CAN_READ_BIG_ENDIAN_WORD(buf)           ((((uint32_t)(buf)[0]) << 24) |  \
+                                                (((uint32_t)(buf)[1]) << 16) |  \
+                                                (((uint32_t)(buf)[2]) << 8) |  \
+                                                ((uint32_t)(buf)[3]))
+
+// Write a 32-bit word in big endian format to a buffer
+#define CAN_WRITE_BIG_ENDIAN_WORD(buf, word)    ((buf)[0] = (uint8_t)(((word) >> 24) & 0xffU),  \
+                                                (buf)[1] = (uint8_t)(((word) >> 16) & 0xffU),  \
+                                                (buf)[2] = (uint8_t)(((word) >> 8) & 0xffU),  \
+                                                (buf)[3] = (uint8_t)((word) & 0xffU))
+
+
 
 /// @brief Creates a frame from a block of bytes
 /// @param frame Pointer to a frame structure allocated by the application
@@ -511,6 +519,30 @@ INLINE void can_make_frame_from_bytes(can_frame_t *frame, const uint8_t *src)
     can_make_frame(frame, ide, arbitration_id, dlc, data, remote);
     // The reference in the frame is the 32-bit tag stored in the frame
     can_frame_set_uref(frame, (void *)tag); 
+}
+
+INLINE void can_make_bytes_from_frame(uint8_t *dest, const can_frame_t *frame, uint32_t tag)
+{
+    dest[0] = frame->remote ? 0x1U : 0;
+    dest[1] = frame->dlc;
+    uint32_t can_id_word = can_frame_get_arbitration_id(frame);
+    if (can_frame_is_extended(frame)) {
+        can_id_word |= (1U << CAN_ID_EXT_BIT);
+    }
+    dest[2] = 0; // Not used
+    CAN_WRITE_BIG_ENDIAN_WORD(dest + 3U, tag);
+    CAN_WRITE_BIG_ENDIAN_WORD(dest + 7U, can_id_word);
+
+    uint8_t *data = can_frame_get_data(frame);
+    // Copy the block of data over (unused bytes are copied too)
+    dest[11] = data[0];
+    dest[12] = data[1];
+    dest[13] = data[2];
+    dest[14] = data[3];
+    dest[15] = data[4];
+    dest[16] = data[5];
+    dest[17] = data[6];
+    dest[18] = data[7];
 }
 
 /////////////////////////////////////// CAN receive overflow ///////////////////////////////////////
