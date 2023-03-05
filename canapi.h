@@ -23,11 +23,30 @@
 
 #include <stdint.h>
 
-#if defined(MCP2517FD)
-#include "mcp2517fd/mcp2517fd-types.h"
+// The MCP25xxFD drivers support the MCP2517FD, MCP2518FD and MCP251863 CAN
+// controllers from Microchip.
+#if defined(MCP2517FD) || defined(MCP2518FD) || defined(MCP251863)
+#define MCP25xxFD
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+// This is where different hosts and CAN controllers are pulled together.
+// For now, only the MCP25xxFD is supported and only the RP2040 host.
+#if !defined(HOST_RP2040) && defined(HOST_CANPICO)
+#define HOST_RP2040
+#endif
+
+#if defined(MCP25xxFD)
+#include "mcp25xxfd/mcp25xxfd-types.h"
+#if defined(HOST_RP2040)
+#include "mcp25xxfd/rp2/mcp25xxfd-rp2.h"
+#else
+#error "Unknown host"
+#endif
 #else
 #error "Unknown CAN controller"
 #endif
+///////////////////////////////////////////////////////////////////////////////
 
 // Size of data structures use for the CAN driver
 #ifndef CAN_TX_QUEUE_SIZE
@@ -87,6 +106,8 @@ typedef enum {
     CAN_ERC_NO_ROOM,                                    // No room
     CAN_ERC_NO_ROOM_PRIORITY,                           // No room in the transmit priority queue
     CAN_ERC_NO_ROOM_FIFO,                               // No room in the transmit FIFO queue
+    CAN_ERC_BAD_WRITE,                                  // Write to a controller register failed
+    CAN_ERC_NO_INTERFACE,                               // No interface binding set for the controller
 } can_errorcode_t;
 
 /// @brief CAN error frame details
@@ -103,8 +124,9 @@ typedef struct {
 ////////////////////////////////////////////// CAN ID //////////////////////////////////////////////
 
 
-// IDs stored in a 32-bit integer, with IDE flag at bit 29, and
-// the arbitration ID at bits 28:18 (standard ID) or 28:0 (extended ID)
+// IDs stored in a 32-bit integer, with IDE flag at bit 29, with
+// ID A (11-bit ID) at bits 10:0 and ID B (18-bit extension to ID) at bits 28:18.
+// NB: for the bottom 28-bits, this is the ID layout used by the MCP25xxFD.
 #define CAN_ID_EXT_BIT                                  (29U)
 #define CAN_ID_ARBITRATION_ID                           (0x1fffffffU)
 
@@ -114,8 +136,11 @@ typedef struct {
 INLINE can_id_t can_make_id(bool extended, uint32_t arbitration_id)
 {
     can_id_t ret;
+    
     if (extended) {
-        ret.id = (arbitration_id & CAN_ID_ARBITRATION_ID) | (1U << CAN_ID_EXT_BIT);
+        arbitration_id &= CAN_ID_ARBITRATION_ID;
+        ret.id = (arbitration_id >> 18) & 0x7ffU;
+        ret.id |= ((arbitration_id & 0x3ffffU) << 11) | (1U << CAN_ID_EXT_BIT);
     }
     else {
         ret.id = arbitration_id & 0x7ffU;
@@ -133,7 +158,15 @@ INLINE bool can_id_is_extended(can_id_t canid)
 /// @brief Returns the arbitration ID, a 29-bit value if the CAN is extended, 11-bit otherwise
 INLINE uint32_t can_id_get_arbitration_id(can_id_t canid)
 {
-    return canid.id & CAN_ID_ARBITRATION_ID;
+    // An arbitration ID is either ID A or ID A concatenated with ID B. It's not that
+    // useful because it can't be used in comparisons (not even equality) but lots of
+    // tools use these numbers.
+    if (can_id_is_extended(canid)) {
+        return ((canid.id & 0x7ffU) << 18) | ((canid.id >> 11) & 0x3ffffU);
+    }
+    else {
+        return canid.id & 0x7ffU;
+    }
 }
 
 /// @brief Options when setting up the CAN controller
@@ -199,14 +232,6 @@ typedef enum {
 typedef struct {
     uint32_t status;                        // Target-specific status information
 } can_status_t;
-
-/// @brief Ask the CAN controller for its status
-/// @exception This call is non-reentrant
-can_status_t can_get_status(void);
-
-/// @brief Ask the CAN controller to recover from Bus Off
-/// @exception This call is non-reentrant
-void can_status_request_recover(void);
 
 // These are target-specific but inlined for performance
 
@@ -303,7 +328,7 @@ typedef struct {
         can_uref_t uref[CAN_TX_QUEUE_SIZE];             // User reference of frame in transmit priority queue
         bool uref_valid[CAN_TX_QUEUE_SIZE];             // Slot is used (for error tolerance)
         uint32_t num_free_slots;                        // Number of free slots in the queue
-        uint8_t fifo_slot;                              // If fifo_slot is < MCP2517FD_TX_QUEUE_SIZE true then indicates where the FIFO frame is
+        uint8_t fifo_slot;                              // If fifo_slot is < MCP25xxFD_TX_QUEUE_SIZE true then indicates where the FIFO frame is
     } tx_pri_queue;
 
     // Transmit event FIFO that records the timestamp and the user reference of the transmitted frame
@@ -318,16 +343,18 @@ typedef struct {
     can_mode_t mode;
     uint16_t options;
 
-    // Target-specific data
+    // Controller specific data
     can_controller_target_t target_specific;
+    // Specific binding to interface to a controller (typically SPI pin details)
+    can_interface_t host_interface;
 } can_controller_t;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////// FUNCTIONS ////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(MCP2517FD)
-#include "mcp2517fd/mcp2517fd-inline.h"
+#if defined(MCP25xxFD)
+#include "mcp25xxfd/mcp25xxfd-inline.h"
 #else
 #error "Unknown CAN controller"
 #endif
@@ -340,7 +367,7 @@ typedef struct {
 /// @param all_filters The list of ID acceptance filters or CAN_NO_FILTERS if none (i.e. accept everything)
 /// @param mode The controller mode (send/receive, listen-only, etc.)
 /// @param options a bit mask of option values
-/// @exception This call is non-reentrant
+/// @exception The caller must have performed the host-specific binding call before making this call
 can_errorcode_t can_setup_controller(can_controller_t *controller,
                                      const can_bitrate_t *bitrate,
                                      const can_id_filters_t *all_filters, 
@@ -348,7 +375,7 @@ can_errorcode_t can_setup_controller(can_controller_t *controller,
                                      uint16_t options);
 
 /// @brief Stop the CAN controller operating
-void can_stop_controller(void);
+void can_stop_controller(can_controller_t *controller);
 
 /// @brief Get the bitmask of options used to initialize the CAN controller
 INLINE uint16_t can_controller_get_options(const can_controller_t *controller)
@@ -356,17 +383,25 @@ INLINE uint16_t can_controller_get_options(const can_controller_t *controller)
     return controller->options;
 }
 
+/////////////////////////////////////// CAN controller status //////////////////////////////////////
+
+/// @brief Ask the CAN controller for its status
+/// @exception This call is non-reentrant
+can_status_t can_get_status(can_controller_t *controller);
+
+/// @brief Ask the CAN controller to recover from Bus Off
+/// @exception This call is non-reentrant
+void can_status_request_recover(can_controller_t *controller);
+
 //////////////////////////////////////////// CAN frame /////////////////////////////////////////////
 /// @brief Put the CAN frame into the queue (priority or FIFO)
 /// @param fifo If true, puts the frame into the FIFO queue that feeds into the priority queue
-/// @exception This call is non-reentrant
-can_errorcode_t can_send_frame(const can_frame_t *frame, bool fifo);
+can_errorcode_t can_send_frame(can_controller_t *controller, const can_frame_t *frame, bool fifo);
 
 /// @brief Returns true if there is space to send a number of frames
 /// @param n_frames The number of frames to send
 /// @param fifo If the frames are to go into the FIFO queue
-/// @exception This call is non-reentrant
-bool can_is_space(uint32_t n_frames, bool fifo);
+bool can_is_space(can_controller_t *controller, uint32_t n_frames, bool fifo);
 
 /// @brief Returns true if the frame has an extended ID
 INLINE bool can_frame_is_extended(const can_frame_t *frame)
@@ -383,7 +418,7 @@ INLINE bool can_frame_is_remote(const can_frame_t *frame)
 /// @brief Returns the arbitration ID of the frame
 INLINE uint32_t can_frame_get_arbitration_id(const can_frame_t *frame)
 {
-    return frame->canid.id & CAN_ID_ARBITRATION_ID;
+    return can_id_get_arbitration_id(frame->canid);
 }
 
 /// @brief Returns a pointer to the payload of the frame
@@ -565,22 +600,19 @@ INLINE uint32_t can_rx_overflow_get_error_cnt(can_rx_overflow_event_t *overflow)
 
 /// @brief Return the number of events in the receive FIFO.
 /// @exception Is a minimum figure because more may have been added since the call returned.
-/// @exception This call is non-reentrant
-uint32_t can_recv_pending(void);
+uint32_t can_recv_pending(can_controller_t *controller);
 
 /// @brief Receive an event as a block of bytes
 /// @param dest Pointer to where the bytes should be written
 /// @param n_bytes Size of area to write the bytes
 /// @returns number of bytes in the block
-/// @exception This call is non-reentrant
 /// @exception If the block isn't big enough then will return 0 even if there are pending events
-uint32_t can_recv_as_bytes(uint8_t *dest, size_t n_bytes);
+uint32_t can_recv_as_bytes(can_controller_t *controller, uint8_t *dest, size_t n_bytes);
 
 /// @brief Receive an event
 /// @param event The application-allocated place to write an event to
 /// @returns true if an event was received
-/// @exception This call is non-reentrant
-bool can_recv(can_rx_event_t *event);
+bool can_recv(can_controller_t *controller, can_rx_event_t *event);
 
 /// @brief Get the event timestamp
 /// @param event The event returned by can_recv()
@@ -646,21 +678,18 @@ INLINE can_rx_overflow_event_t *can_event_get_overflow(can_rx_event_t *event)
 /// @brief Receive a frame transmission FIFO event
 /// @param event The application-allocated place to write the event to
 /// @returns true if an event was received
-/// @exception This call is non-reentrant
-bool can_recv_tx_event(can_tx_event_t *event);
+bool can_recv_tx_event(can_controller_t *controller, can_tx_event_t *event);
 
 /// @brief Receive an event as a block of bytes
 /// @param dest Pointer to where the bytes should be written
 /// @param n_bytes Size of area to write the bytes
 /// @returns number of bytes in the block
-/// @exception This call is non-reentrant
 /// @exception If the block isn't big enough then will return 0 even if there are pending events
-uint32_t can_recv_tx_event_as_bytes(uint8_t *dest, size_t n_bytes);
+uint32_t can_recv_tx_event_as_bytes(can_controller_t *controller, uint8_t *dest, size_t n_bytes);
 
 /// @brief Return the number of events in the transmit event FIFO.
-/// @exception This call is non-reentrant
 /// @exception Is a minimum figure because more may have been added since the call returned.
-uint32_t can_recv_tx_events_pending(void);
+uint32_t can_recv_tx_events_pending(can_controller_t *controller);
 
 /// @brief Returns true if the transmit event is a frame transmission
 /// @param event The event returned by can_recv_tx_event()
@@ -780,20 +809,17 @@ bool can_error_is_bus_off(can_error_t *error);
 uint32_t can_error_get_frame_cnt(can_error_t *error);
 
 /// @brief Return the current timestamp timer.
-/// @exception This call is non-reentrant
 /// @exception The returned value will always lag the actual value due to accessing delays
 /// @exception An external CAN controller connected by SPI will have a significant lag
-uint32_t can_get_time(void);
+uint32_t can_get_time(can_controller_t *controller);
 
 /// @brief Return the space in the priority or FIFO transmit queues
-/// @exception This call is non-reentrant
 /// @exception Use can_is_space() to determine if there is space to queue the frame
-uint32_t can_get_send_space(bool fifo);
+uint32_t can_get_send_space(can_controller_t *controller, bool fifo);
 
 /// @brief Handler for ISR; application is responsible for dismissing the GPIO interrupt
-/// @exception This call is non-reentrant
-/// @exception Target-specific to the MCP2517FD and MCP2518FD CAN controllers
-void mcp2517fd_irq_handler(void);
+/// @exception Target-specific to the MCP25xxFD CAN controllers
+void mcp25xxfd_irq_handler(can_controller_t *controller);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////// SPI BINDING ////////////////////////////////////////////////
@@ -803,34 +829,43 @@ void mcp2517fd_irq_handler(void);
 // and is an API for the driver binding code only.
 
 // Initialize the SPI pins (set up the on-chip SPI controller and set its GPIO pins for SPI functions)
-inline void mcp2517fd_spi_pins_init(void);
+inline void mcp25xxfd_spi_pins_init(can_interface_t *interface);
 
 // Enable interrupts on the GPIO pin connected to the controller's IRQ line
-inline void mcp2517fd_spi_gpio_enable_irq(void);
+inline void mcp25xxfd_spi_gpio_enable_irq(can_interface_t *interface);
+
+// This is called to convert 4 bytes in memory to 32-bits where the lowest address byte is
+// at bits 7:0 of the word, which will then be transmitted to the MCP25xxFD in little endian
+// format. For a little-endian CPU, this is already in the right format and the operation
+// is null.
+inline uint32_t mcp25xxfd_convert_bytes(uint32_t w);
+
+// Check interrupt GPIO pin for a specific interface to see if an interrupt is asserted 
+inline bool mcp25xxfd_spi_gpio_irq_asserted(can_interface_t *interface);
 
 // Disable interrupts on the GPIO pin connected to the controller's IRQ line
-inline void mcp2517fd_spi_gpio_disable_irq(void);
+inline void mcp25xxfd_spi_gpio_disable_irq(can_interface_t *interface);
 
 // Select the controller via its SPI chip select I/O pin (active low) 
-inline void mcp2517fd_spi_select(void);
+inline void mcp25xxfd_spi_select(can_interface_t *interface);
 
 // Deselect the controller via its SPI chip select I/O pin
-inline void mcp2517fd_spi_deselect(void);
+inline void mcp25xxfd_spi_deselect(can_interface_t *interface);
 
 // Write len bytes of data from src to the SPI
-inline void mcp2517fd_spi_write(const uint8_t *src, size_t len);
+inline void mcp25xxfd_spi_write(can_interface_t *interface, const uint8_t *src, size_t len);
 
 // Write len bytes of data from cmd to the SPI port, storing the response in resp
-inline void mcp2517fd_spi_read_write(const uint8_t *cmd, uint8_t *resp, size_t len);
+inline void mcp25xxfd_spi_read_write(can_interface_t *interface, const uint8_t *cmd, uint8_t *resp, size_t len);
 
 // Read len bytes of data to dst from the SPI port
-inline void mcp2517fd_spi_read(uint8_t *dst, size_t len);
+inline void mcp25xxfd_spi_read(can_interface_t *interface, uint8_t *dst, size_t len);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////// CALLBACKS /////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// @brief Callback from ISR to indicat eframe has transmitted
+/// @brief Callback from ISR to indicate frame has transmitted
 /// @param uref The application provided user reference associated with the frame
 /// @param timestamp The time the frame was transmitted (taken at frame SOF)
 /// @exception Called at ISR level so interrupts are locked

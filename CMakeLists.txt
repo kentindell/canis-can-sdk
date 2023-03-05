@@ -3,9 +3,12 @@
 # Runs on the Raspberry Pi Pico connected to a Canis Labs CANPico board
 # (see https://kentindell.github.io/canpico for more about the CANPico)
 #
+# If the Pico W is used with the CANPico board then set the PICO_BOARD variable
+# appropriately (see below) or invoke cmake with PICO_BOARD=pico_w
+#
 # Running the example requires a functional CAN bus with at least one other
-# active CAN controller (the ideal companion is a CANPico with the MicroPython
-# CAN API).
+# active CAN controller that will set the acknowledge bit of the CAN frame
+# (the ideal companion is a CANPico with the MicroPython CAN API)
 #
 # The program sends a 5-byte CAN frame every half second, and displays any
 # incoming CAN frames.
@@ -31,6 +34,9 @@
 # Set minimum required version of CMake
 cmake_minimum_required(VERSION 3.12)
 
+# Defaults to the Pico board (a value of 'pico'). Uncomment the following line if using an Pico W.
+# set(PICO_BOARD pico_w)
+
 # Include build functions from Pico SDK
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
@@ -39,9 +45,9 @@ project(hello_can C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-# These are the definitions to select the MCP2517FD on the CANPico and
+# These are the definitions to select the MCP25xxFD on the CANPico and
 # the binding to the RP2040 and CANPico pinouts.
-add_definitions(-DMCP2517FD -DHOST_CANPICO)
+add_definitions(-DMCP25xxFD -DHOST_CANPICO)
 
 # Creates a pico-sdk subdirectory in our project for the libraries
 pico_sdk_init()
@@ -49,7 +55,7 @@ pico_sdk_init()
 # Tell CMake where to find the executable source file
 add_executable(${PROJECT_NAME} 
     hello_can.c
-    mcp2517fd/mcp2517fd.c
+    mcp25xxfd/mcp25xxfd.c
 )
 
 # Create map/bin/hex/uf2 files
@@ -61,6 +67,15 @@ target_link_libraries(${PROJECT_NAME}
     hardware_spi
     hardware_gpio
 )
+
+# Additional library for Pico W to access the LED via the WiFi chip
+# (See https://github.com/raspberrypi/pico-sdk/releases for a list of other libraries)
+if (${PICO_BOARD} MATCHES "pico_w") 
+    target_link_libraries(${PROJECT_NAME} 
+        pico_cyw43_arch_none
+)
+endif()
+
 
 # For standalone execution, set USB to 1 and UART to 0 so that the output can be
 # displayed over the USB serial port. For use with a picoprobe SWD debugger, use

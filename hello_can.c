@@ -1,7 +1,7 @@
 /**
- * Copyright (c) 2022 Canis Automotive Labs Ltd
+ * Copyright (c) 2022-2023 Canis Automotive Labs Ltd
  *
- * Simple example of using the Canis Labs CAN SDK to send and receive frames with the MCP2517FD CAN
+ * Simple example of using the Canis Labs CAN SDK to send and receive frames with the MCP25xxFD CAN
  * controller on the Canis Labs CANPico board with a Raspberry Pi Pico.
  * 
  * See the blog post:
@@ -14,7 +14,7 @@
  * 
  * https://kentindell.github.io/canpico
  * 
- * To build this for a Pico
+ * To build this for a Pico:
  * 
  * Install the C++/C SDK for the Pico:
  * 
@@ -60,29 +60,66 @@ void print_frame(can_frame_t *f, uint32_t timestamp)
 
 static can_controller_t controller; 
 
-const uint LED_PIN = PICO_DEFAULT_LED_PIN;
-
 #include <stdio.h>
 #include "pico/stdlib.h"
 
+// Wrapper to parameterize the API's IRQ handler with the handle to the single CAN
+// controller on the CANPico (the structure is defined above and configured by
+// binding to the SPI port and pins used on the CANPico).
+void irq_handler(void)
+{
+    mcp25xxfd_irq_handler(&controller);
+}
+
+void led_init(void)
+{
+#ifndef PICO_DEFAULT_LED_PIN
+    if (cyw43_arch_init()) {
+        printf("Wi-Fi init failed");
+    }
+#else
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+#endif
+}
+
+void led_on(void)
+{
+#ifndef PICO_DEFAULT_LED_PIN
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+#else
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
+#endif
+}
+
+void led_off(void)
+{
+#ifndef PICO_DEFAULT_LED_PIN
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+#else
+    gpio_put(PICO_DEFAULT_LED_PIN, 0);
+#endif
+}
+
 int main() {
     stdio_init_all();
-
-    // LEDs
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
+    led_init();
 
     // This Pico SDK call binds the GPIO vector to calling the CAN controller ISR. If there are
     // other devices connected to GPIO interrupts (e.g. the WiFi chip on the Pico W)
     // then the code will have to work out which interrupts are pending and call the
     // appropriate handlers.
-    irq_set_exclusive_handler(IO_IRQ_BANK0, mcp2517fd_irq_handler);
+    irq_set_exclusive_handler(IO_IRQ_BANK0, irq_handler);
 
     can_errorcode_t rc;
 
     // Example uses 500Kbit/sec, 75% sample point
     can_bitrate_t bitrate = {.profile = CAN_BITRATE_500K_75}; 
 
+    // Bind the Pico SPI interface to the CANPico's pin layout
+    mcp25xxfd_spi_bind_canpico(&controller.host_interface);
+
+    // Set up the CAN controller on the CANPico using the bound SPI interface
     while (true) {
         rc = can_setup_controller(&controller, &bitrate, CAN_NO_FILTERS, CAN_MODE_NORMAL, CAN_OPTIONS_NONE);
         if (rc != CAN_ERC_NO_ERROR) {
@@ -97,7 +134,7 @@ int main() {
         }
     }
 
-    // Create a CAN frame with 11-bit ID of 0x123 adn 5 byte payload of deadbeef00
+    // Create a CAN frame with 11-bit ID of 0x123 and 5 byte payload of deadbeef00
     uint8_t data[5] = {0xdeU, 0xadU, 0xbeU, 0xefU, 0x00U};
 
     can_frame_t my_tx_frame;
@@ -107,10 +144,10 @@ int main() {
 
     while (true) {
         // Light on
-        gpio_put(LED_PIN, 1);
+        led_on();
 
         // Send our frame
-        rc = can_send_frame(&my_tx_frame, false);
+        rc = can_send_frame(&controller, &my_tx_frame, false);
         if (rc != CAN_ERC_NO_ERROR) {
             // This can happen if there is no room in the transmit queue, which can
             // happen if the CAN controller is connected to a CAN bus but there are no
@@ -128,7 +165,7 @@ int main() {
         // Wait
         sleep_ms(250);
         // Light off
-        gpio_put(LED_PIN, 0);
+        led_off();
         // Wait
         sleep_ms(250);
 
@@ -137,7 +174,7 @@ int main() {
         uint32_t n = 0;
         while (n < 10U) {
             can_rx_event_t *e = &rx_event;
-            if (can_recv(e) && can_event_is_frame(e)) {
+            if (can_recv(&controller, e) && can_event_is_frame(e)) {
                 can_frame_t *f = can_event_get_frame(e);
                 print_frame(f, e->timestamp);
                 n++;

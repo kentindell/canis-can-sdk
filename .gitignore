@@ -1,0 +1,15 @@
+build/**
+CMakeFiles/**
+pico-sdk/**
+pioasm/**
+generated/**
+cmake_install.cmake
+CMakeCache.txt
+hello_can.bin
+hello_can.dis
+hello_can.elf.map
+hello_can.hex
+Makefile
+.vscode/**
+hello_can.elf
+elf2uf2/**

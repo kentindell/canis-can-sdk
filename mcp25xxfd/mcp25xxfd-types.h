@@ -1,4 +1,4 @@
-// Copyright 2020-2022 Canis Automotive Labs (canislabs.com)
+// Copyright 2020-2023 Canis Automotive Labs (canislabs.com)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 // documentation files (the "Software"), to deal in the Software without restriction, including without limitation
@@ -14,24 +14,26 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef MCP2517FD_TYPES_H
-#define MCP2517FD_TYPES_H
+#ifndef MCP25xxFD_TYPES_H
+#define MCP25xxFD_TYPES_H
 
 #include "../canapi.h"
 
 #if defined(HOST_CANPICO)
-#include "rp2/mcp2517fd-rp2.h"
+#include "rp2/mcp25xxfd-rp2.h"
 #else
 #error "Unknown host"
 #endif
-// Other host platforms with the MCP2517FD will be included here
+// Other host platforms with the MCP25xxFD will be included here
 
-// Target-specific data types for MCP2517FD CAN controller
-
+// Target-specific data types for MCP25xxFD CAN controller
 typedef struct {
     uint32_t seq_bad;                               // Number of times the SEQ field was bad
     uint32_t txqua_bad;                             // C1TXQUA read back out of range or otherwise bad
     uint32_t txqsta_bad;                            // C1TXSTA read back showing queue full
+    uint32_t bus_off;                               // Count of number of times device has been bus off
+    uint32_t spurious;                              // Count of spurious interrupts
+    uint32_t crc_bad;                               // Count of read CRC failure
 } can_controller_target_t;
 
 typedef struct {
@@ -42,4 +44,4 @@ typedef struct {
 
 #define CAN_MAX_ID_FILTERS                          (32U)
 
-#endif // MCP2517FD_TYPES_H
+#endif // MCP25xxFD_TYPES_H

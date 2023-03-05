@@ -2,20 +2,20 @@
 
 This is the Canis Labs CAN C SDK. It provides a uniform API for CAN that is portable to different CAN controller hardware, and also to different microcontroller targets.
 
-The first CAN controller for this API is the Microchip MCP2517FD (and Microchip MCP2518FD). This is the CAN controller on the Canis Labs CANPico board. A binding for that board is included.
+The first CAN controller for this API is the Microchip MCP25xxFD. This is the CAN controller on the Canis Labs CANPico board. A binding for that board is included.
 
 ## Building
 
 Application code should include `canapi.h` for the definitions and relevant driver.
 
-Add to the build for the MCP2517FD CAN controller:
-* `mcp2517fd/mcp2517fd.c`
+Add to the build for the MCP25xxFD CAN controller:
+* `mcp25xxfd/mcp25xxfd.c`
 
 Compilation options:
-* Define `MCP2517FD` to bring in the appropriate driver defintions
+* Define `MCP25xxFD` to bring in the appropriate driver defintions
 * Define `HOST_CANPICO` to build for the Canis Labs CANPico
 
-See the reference manual (`docs/2208-01-RM.pdf`) for more details.
+See the reference manual (`docs/2303-01-RM.pdf`) for more details.
 
 ## Hello World example for the CANPico
 
@@ -24,7 +24,7 @@ There is a simple 'hello world' example program for the CANPico, built using the
     $ cmake CMakeLists.txt
     $ make
 
-Program the firmware in the file `can_hello.uf2` to the Pico in the normal way.
+Program the firmware in the file `can_hello.uf2` to the Pico in the normal way. For Pico W support, see CMakeLists.txt. 
 
 More on the CANPico can be found at the Canis Labs CTO blog:
 
@@ -43,24 +43,31 @@ The file structure for the SDK is:
     CMakeFile.txt           [cmake file for CANPico hello world demo]
     docs/                   [Documentation]
         api-cheat-sheet.png     [Cheat sheet for the API]
-        2208-01-RM.pdf          [CAN SDK for C reference manual]
-    mcp2517fd/              [Drivers for MCP2517FD chip]
-        mcp2517fd-types.h       [Definition of target-specific types]
-        mcp2517fd.c             [Implementation of drivers]
-        mcp2517fd-inline.h      [Implementation of some API functions using inline code]
+        2303-01-RM.pdf          [CAN SDK for C reference manual]
+    mcp25xxfd/              [Drivers for MCP25xxFD chip]
+        mcp25xxfd-types.h       [Definition of target-specific types]
+        mcp25xxfd.c             [Implementation of drivers]
+        mcp25xxfd-inline.h      [Implementation of some API functions using inline code]
         rp2/
-            mcp2517fd-rp2.h         [Target-specific definitions for RP2040/CANPico]
+            mcp25xxfd-rp2.h         [Target-specific definitions for RP2040/CANPico]
 
 ## MicroPython API
 
 This CAN SDK for C is used by the Canis Labs MicroPython firmware build for the CANPico. See the Canis Labs CANHack repository: https://github.com/kentindell/canhack in `pico/micropython`
 
+## Changes in 2023-03-05 update
+
+- Fixes for silicon errata (now uses CRC-protected reads from controller)
+- Bug fixes (CAN ID mapping was incorrect for extended ID frames)
+- Added support for multiple instances of a CAN controller (including binding to SPI interface)
+- Renamed files with 'mcp2517fd' to 'mcp25xxfd' to better reflect devices supported
+- Added support for Pico W in example program
 ## Future
 
 Roadmap includes:
 
 - Support for the on-chip bxCAN of the STM32 family
 - Sleep and wakeup support
-- Support for multiple CAN controllers on the same host
 - Better FIFO design
 - Support for the Bullseye (bullseye.com) CCover code coverage tool
+- Support for CAN FD on the MCP25xxFD controllers

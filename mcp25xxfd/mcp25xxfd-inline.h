@@ -1,4 +1,4 @@
-// Copyright 2020-2022 Canis Automotive Labs (canislabs.com)
+// Copyright 2020-2023 Canis Automotive Labs (canislabs.com)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 // documentation files (the "Software"), to deal in the Software without restriction, including without limitation
@@ -14,8 +14,8 @@
 // TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#ifndef MCP2517FD_INLINE_H
-#define MCP2517FD_INLINE_H
+#ifndef MCP25xxFD_INLINE_H
+#define MCP25xxFD_INLINE_H
 
 #include "../canapi.h"
 
@@ -86,22 +86,30 @@ INLINE uint32_t can_error_get_frame_cnt(can_error_t *error)
     return error->details & 0xffffU;
 }
 
-// Filter construction
+// Filter construction. This function makes an ID filter that exactly matches
+// a given CAN ID.
 INLINE void can_make_id_filter(can_id_filter_t *filter, can_id_t canid)
 {
-    uint32_t arbitration_id = canid.id & CAN_ID_ARBITRATION_ID;
-
-    if (canid.id & (1U << CAN_ID_EXT_BIT)) {
-        filter->fltobj = (1U << 30) | arbitration_id;
+    if (can_id_is_extended(canid)) {
+        // Bit 30 is EXIDE and indicates the filter is for an extended ID
+        // The 29 bits of CAN ID are already in native MCP25xxFD format
+        filter->fltobj = (1U << 30) | (canid.id & CAN_ID_ARBITRATION_ID);
+        // MIDE=1 so that IDE bit must match (i.e. matches only extended IDs)
+        // Selects all 29 bits of ID to must-match
         filter->mask = 0x5fffffffU;
     }
     else {
-        filter->fltobj = arbitration_id;
+        // EXIDE=0
+        filter->fltobj = canid.id & CAN_ID_ARBITRATION_ID;
+        // Sets MIDE=1
+        // Selects ID A bits of ID to must-match
         filter->mask = 0x400007ffU;
     }
     filter->enabled = true;
 }
 
+// Filter construction. This function makes an ID filter that allows
+// all CAN frames through.
 INLINE void can_make_id_filter_all(can_id_filter_t *filter)
 {
     filter->fltobj = 0;
@@ -109,6 +117,8 @@ INLINE void can_make_id_filter_all(can_id_filter_t *filter)
     filter->enabled = true;
 }
 
+// Filter construction. This function makes an ID filter that won't
+// match any frames.
 INLINE void can_make_id_filter_disabled(can_id_filter_t *filter)
 {
     filter->fltobj = 0;
@@ -126,11 +136,13 @@ INLINE bool can_id_filter_is_extended(can_id_filter_t *filter)
     return filter->fltobj & (1U << 30);
 }
 
+// This function returns the arbitration ID mask (a 29-bit or 11-bit
+// integer) which is either ID A or ID A concatenated with ID B.
 INLINE uint32_t can_id_filter_get_mask(can_id_filter_t *filter)
 {
     bool ide = can_id_filter_is_extended(filter);
     if (ide) {
-        return filter->mask & CAN_ID_ARBITRATION_ID;
+        return ((filter->mask & 0x7ffU) << 18) | ((filter->mask >> 11) & 0x3ffffU);
     }
     else {
         return filter->mask & 0x7ffU;
@@ -141,24 +153,32 @@ INLINE uint32_t can_id_filter_get_match(can_id_filter_t *filter)
 {
     bool ide = can_id_filter_is_extended(filter);
     if (ide) {
-        return filter->fltobj & CAN_ID_ARBITRATION_ID;
+        return ((filter->fltobj & 0x7ffU) << 18) | ((filter->fltobj >> 11) & 0x3ffffU);
     }
     else {
         return filter->fltobj & 0x7ffU;
     }
 }
 
+// Filter construction. This function makes an ID filter that uses a mask and
+// match against an arbitration ID
 INLINE void can_make_id_filter_masked(can_id_filter_t *filter, bool ide, uint32_t arbitration_id_match, uint32_t arbitration_id_mask)
 {
+    arbitration_id_match &= CAN_ID_ARBITRATION_ID;
+    arbitration_id_mask &= CAN_ID_ARBITRATION_ID;
+
+    filter->mask = (1U << 30); // Bit 30 of CiMASKm is MIDE, the must-match IDE 
     if (ide) {
-        filter->fltobj = (1U << 30) | (arbitration_id_match & CAN_ID_ARBITRATION_ID);
-        filter->mask = 0x40000000U | (arbitration_id_mask & CAN_ID_ARBITRATION_ID);
+        // Set EIDE value: match only 29-bit IDs
+        filter->fltobj = (1U << 30) | ((arbitration_id_match >> 18) & 0x7ffU) | ((arbitration_id_match & 0x3ffffU) << 11);
+        filter->mask |= ((arbitration_id_mask >> 18) & 0x7ffU) | ((arbitration_id_mask & 0x3ffffU) << 11);
     }
     else {
+        // Do not set EIDE: match only 11-bit IDs
         filter->fltobj = arbitration_id_match & 0x7ffU;
-        filter->mask = 0x40000000U | (arbitration_id_mask & 0x7ffU);
+        filter->mask |= (arbitration_id_mask & 0x7ffU);
     }
     filter->enabled = true;
 }
 
-#endif // MCP2517FD_INLINE_H
+#endif // MCP25xxFD_INLINE_H
