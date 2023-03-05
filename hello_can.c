@@ -42,6 +42,12 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
+
+// Include the WiFi chip access functions for driving the on-board LED on the Pico W
+#ifndef PICO_DEFAULT_LED_PIN
+#include "pico/cyw43_arch.h"
+#endif
+
 #include "canapi.h"
 
 // Utility function to print a CAN frame to stdout
