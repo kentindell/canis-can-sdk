@@ -15,7 +15,7 @@ Compilation options:
 * Define `MCP25xxFD` to bring in the appropriate driver defintions
 * Define `HOST_CANPICO` to build for the Canis Labs CANPico
 
-See the reference manual (`docs/2303-01-RM.pdf`) for more details.
+See the reference manual (`docs/2208-02-RM.pdf`) for more details.
 
 ## Hello World example for the CANPico
 
@@ -26,9 +26,9 @@ There is a simple 'hello world' example program for the CANPico, built using the
 
 Program the firmware in the file `can_hello.uf2` to the Pico in the normal way. For Pico W support, see CMakeLists.txt. 
 
-More on the CANPico can be found at the Canis Labs CTO blog:
+More on the CANPico can be found at the Canis Labs web site:
 
-https://kentindell.github.io/canpico
+https://canislabs.com/canpico
 
 There is also a blog post on how to debug in C for the Pico using Microsoft Visual Studio Code as an embedded IDE:
 
@@ -43,7 +43,7 @@ The file structure for the SDK is:
     CMakeFile.txt           [cmake file for CANPico hello world demo]
     docs/                   [Documentation]
         api-cheat-sheet.png     [Cheat sheet for the API]
-        2303-01-RM.pdf          [CAN SDK for C reference manual]
+        2303-02-RM.pdf          [CAN SDK for C reference manual]
     mcp25xxfd/              [Drivers for MCP25xxFD chip]
         mcp25xxfd-types.h       [Definition of target-specific types]
         mcp25xxfd.c             [Implementation of drivers]
