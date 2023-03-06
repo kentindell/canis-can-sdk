@@ -72,9 +72,30 @@ static can_controller_t controller;
 // Wrapper to parameterize the API's IRQ handler with the handle to the single CAN
 // controller on the CANPico (the structure is defined above and configured by
 // binding to the SPI port and pins used on the CANPico).
-void irq_handler(void)
+//
+// NB: The RP2040 with execute-in-place (XIP) flash suffers from very long cache
+// miss delays, and these can cause significant delays to the interrupt handler.
+// Generally the entire chain of interrupt handling (from vector table to first-level
+// handler to device-specific handlers) should be located in RAM to avoid these
+// cache delays. The CAN drivers are allocated to RAM with the "TIME_CRITICAL"
+// attribute that causes the compiler to place the function in RAM.
+//
+// This problem of delaying interrupts also extends to critical sections: code that
+// disables an interrupt around some function also should execute from RAM while in
+// that function to avoid delaying an urgent interrupt handler. This "priority
+// inversion" is discussed further here:
+//
+// https://kentindell.github.io/2021/03/05/pico-priority-inversion/
+void TIME_CRITICAL irq_handler(void)
 {
-    mcp25xxfd_irq_handler(&controller);
+    // Work out if this interrupt is from the the MCP25xxFD. The bound interface
+    // defines the pin used for the interrupt line from the CAN controller.
+    uint8_t spi_irq = controller.host_interface.spi_irq;
+    uint32_t events = gpio_get_irq_event_mask(spi_irq); 
+
+    if (events & GPIO_IRQ_LEVEL_LOW) {
+        mcp25xxfd_irq_handler(&controller);
+    }
 }
 
 void led_init(void)
@@ -113,9 +134,8 @@ int main() {
 
     // This Pico SDK call binds the GPIO vector to calling the CAN controller ISR. If there are
     // other devices connected to GPIO interrupts (e.g. the WiFi chip on the Pico W)
-    // then the code will have to work out which interrupts are pending and call the
-    // appropriate handlers.
-    irq_set_exclusive_handler(IO_IRQ_BANK0, irq_handler);
+    // then the appropriate handler has to be called.
+    irq_add_shared_handler(IO_IRQ_BANK0, irq_handler, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
 
     can_errorcode_t rc;
 

@@ -36,6 +36,7 @@ cmake_minimum_required(VERSION 3.12)
 
 # Defaults to the Pico board (a value of 'pico'). Uncomment the following line if using an Pico W.
 # set(PICO_BOARD pico_w)
+set(PICO_BOARD pico)
 
 # Include build functions from Pico SDK
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
