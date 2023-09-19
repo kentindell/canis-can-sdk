@@ -466,8 +466,8 @@ INLINE can_uref_t can_frame_get_uref(can_frame_t *frame)
 
 /// @brief Create a CAN frame
 /// @param frame A pointer to the application-allocated structure
-/// @param arbitration_id The 29-bit or 11-bit CAN ID
 /// @param ide True if the arbitration ID is 29-bit
+/// @param arbitration_id The 29-bit or 11-bit CAN ID
 /// @param dlc The 4-bit DLC value for the frame
 /// @param data A pointer to the bytes containing the payload
 /// @param remote The frame is a remote frame
