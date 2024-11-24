@@ -10,7 +10,7 @@
 # active CAN controller that will set the acknowledge bit of the CAN frame
 # (the ideal companion is a CANPico with the MicroPython CAN API)
 #
-# The program sends a 5-byte CAN frame every half second, and displays any
+# The program sends a 64-byte CAN frame every half second, and displays any
 # incoming CAN frames.
 #
 # Building this example requires that the Raspberry Pi Pico C SDK is installed and
@@ -31,16 +31,31 @@
 #
 # (Assuming the USB serial port is /dev/ttyACM0 - it might be on a different port, depending
 # on what other serial devices are connected)
+#
+# The program can be built in listen-only mode where it will not try to send a CAN
+# frame. This can be useful when there are two devices, and only one needs to transmit.
+# To enable this build:
+#
+# $ cmake -DLISTEN_ONLY=ON
+# $ make clean
+# $ make
+# 
+# To disable this:
+#
+# $ cmake -DLISTEN_ONLY=OFF
+# $ make clean
+# $ make
 
 # Set minimum required version of CMake
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.13)
 
 # Defaults to the Pico board (a value of 'pico'). Uncomment the following line if using an Pico W.
 # set(PICO_BOARD pico_w)
 set(PICO_BOARD pico)
+option(LISTEN_ONLY "Do not transmit CAN frames" OFF)
 
 # Include build functions from Pico SDK
-include($ENV{PICO_SDK_PATH}/pico_sdk_init.cmake)
+include(pico_sdk_import.cmake)
 
 # Set name of project (as PROJECT_NAME) and C/C++ standards
 project(hello_can C CXX ASM)
@@ -50,6 +65,10 @@ set(CMAKE_CXX_STANDARD 17)
 # These are the definitions to select the MCP25xxFD on the CANPico and
 # the binding to the RP2040 and CANPico pinouts.
 add_definitions(-DMCP25xxFD -DHOST_CANPICO)
+# Prevent hello world from transmitting CAN frames
+if(LISTEN_ONLY)
+add_definitions(-DLISTEN_ONLY)
+endif()
 
 # Creates a pico-sdk subdirectory in our project for the libraries
 pico_sdk_init()

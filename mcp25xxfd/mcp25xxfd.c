@@ -348,9 +348,19 @@ static uint32_t TIME_CRITICAL read_word_crc(can_interface_t *spi_interface, uint
     return 0xffffffffU; // A non-zero value to ensure a bad SEQ read is out of range;
 }
 
+static void TIME_CRITICAL read_additional_words(can_interface_t *spi_interface, uint32_t *words, uint32_t n)
+{
+    // Reads the additional data and then deselects the SPI
+    // Bulk data
+    if (n > 0) {
+        mcp25xxfd_spi_read(spi_interface, (uint8_t *)(words), 4U * n);
+    }
+    mcp25xxfd_spi_deselect(spi_interface);
+}
+
 // Errata does not require buffer space words to be read via CRC as a workaround to
 // silicon bugs. This of course might not be true.
-static void TIME_CRITICAL read_words(can_interface_t *spi_interface, uint16_t addr, uint32_t *words, uint32_t n)
+static void TIME_CRITICAL read_words_no_deselect(can_interface_t *spi_interface, uint16_t addr, uint32_t *words, uint32_t n)
 {
     // Must be called with interrupts locked
 
@@ -366,8 +376,16 @@ static void TIME_CRITICAL read_words(can_interface_t *spi_interface, uint16_t ad
     mcp25xxfd_spi_write(spi_interface, buf, 2U);
     // Bulk data
     mcp25xxfd_spi_read(spi_interface, (uint8_t *)(words), 4U * n);
+}
+
+static void TIME_CRITICAL read_words(can_interface_t *spi_interface, uint16_t addr, uint32_t *words, uint32_t n)
+{
+    // Must be called with interrupts locked
+    mcp25xxfd_spi_select(spi_interface);
+    read_words_no_deselect(spi_interface, addr, words, n);
     mcp25xxfd_spi_deselect(spi_interface);
 }
+
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -910,7 +928,7 @@ static void TIME_CRITICAL tx_handler(can_controller_t *controller)
 
     ////// Error checking: should not fail if the hardware is behaving correctly
     // The sequence number may have been corrupted over SPI by noise so we treat it with some
-    // suspicion. If it doesn't refer to a valid slot then we dismiss the interrupt without
+    // suspicion. If it doesn't refer to a valid slot then we dismiss the intetrrupt without
     // processing it.
     if (seq > TXQ_LARGEST_HASH_VALUE || !controller->tx_pri_queue.uref_valid[seq]) {
         // Bad SEQ value, keep a count of it and then dismiss the interrupt. This will result
@@ -1089,8 +1107,9 @@ static void TIME_CRITICAL rx_handler(can_controller_t *controller)
     uint16_t addr = (uint16_t)read_word_crc(spi_interface, C1FIFOUA1) + 0x400U;
 
     // Pick up the frame (or partial frame if an FD frame)
-    uint32_t r[5];
-    read_words(spi_interface, addr, r, 5U);
+    uint32_t r[3]; // 3 metadata words, no payload words
+    // Keeps the SPI transaction open while the total size of the transfer is calculated
+    read_words_no_deselect(spi_interface, addr, r, 3U);
 
     // Get to the receive callback as quickly as possible
 
@@ -1138,19 +1157,13 @@ static void TIME_CRITICAL rx_handler(can_controller_t *controller)
     frame.flags |= rtr ? CAN_FRAME_FLAG_RTR : 0;
 
     size_t len_words = (can_frame_get_data_len(&frame) + 3U) >> 2;
-    if (len_words < 2U) {
-        len_words = 2U;
-    }
-    frame.fd_data[0] = mcp25xxfd_convert_bytes(r[3]);
-    frame.fd_data[1] = mcp25xxfd_convert_bytes(r[4]);
-
-    if (len_words > 2U) {
-        // Copy out the rest of the FD payload
-        uint32_t tmp[16U];
-        read_words(spi_interface, addr + 5U, tmp + 2U, len_words - 2U);
-        for (size_t i = 2U; i < len_words; i++) {
-            frame.fd_data[i] = mcp25xxfd_convert_bytes(tmp[i]);
-        }
+    uint32_t tmp[16];
+    // Copy out the payload (at most 2 words for classic CAN, up to 16 for CAN FD)
+    // (also closes the SPI transaction, so must call this even if 0 payload words to read)
+    read_additional_words(spi_interface, tmp, len_words);
+    // Put them into the CAN frame, handling endianness
+    for (size_t i = 0; i < len_words; i++) {
+        frame.fd_data[i] = mcp25xxfd_convert_bytes(tmp[i]);
     }
 
     // Callback is a good place to put any CAN ID or payload triggering function,
