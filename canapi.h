@@ -21,7 +21,13 @@
 #ifndef CANAPI_H
 #define CANAPI_H
 
+#include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
+
+#ifndef INLINE
+#define INLINE inline
+#endif
 
 // The MCP25xxFD drivers support the MCP2517FD, MCP2518FD and MCP251863 CAN
 // controllers from Microchip.
@@ -40,6 +46,7 @@
 #include "mcp25xxfd/mcp25xxfd-types.h"
 #if defined(HOST_RP2040)
 #include "mcp25xxfd/rp2/mcp25xxfd-rp2.h"
+#elif defined(HOST_GENERIC)
 #else
 #error "Unknown host"
 #endif
@@ -486,16 +493,16 @@ INLINE bool can_frame_is_esi(const can_frame_t *frame)
     return !!(frame->flags & CAN_FRAME_FLAG_ESI);
 }
 
-extern size_t can_fd_dlc_to_size[];
+extern uint16_t can_fd_dlc_to_size[];
 
 /// @brief Returns length of frame payload in bytes
-INLINE size_t can_frame_get_data_len(const can_frame_t *frame)
+INLINE uint16_t can_frame_get_data_len(const can_frame_t *frame)
 {
     if (can_frame_is_remote(frame)) {
         return 0;
     }
     if (can_frame_is_fd(frame)) {
-        size_t len = can_fd_dlc_to_size[frame->dlc & 0xfU];
+        uint16_t len = can_fd_dlc_to_size[frame->dlc & 0xfU];
         return len;
     }
     else {
@@ -523,14 +530,14 @@ INLINE void can_make_frame(can_frame_t *frame, bool ide, uint32_t arbitration_id
     frame->uref = can_uref_null;    // User can fill this in later if necessary
     // Copy the correct number of data bytes in
     uint8_t *dst = (uint8_t *)frame->fd_data;
-    size_t len;
+    uint16_t len;
     if (flags & CAN_FRAME_FLAG_FDF) {
         len = can_fd_dlc_to_size[dlc];
     }
     else {
         len = dlc >= 8U ? 8U : dlc;
     }
-    for (size_t i = 0; i < len; i++) {
+    for (uint16_t i = 0; i < len; i++) {
         dst[i] = data[i];
     }
 }
@@ -586,14 +593,14 @@ INLINE void can_make_bytes_from_frame(uint8_t *dest, const can_frame_t *frame, u
     CAN_WRITE_BIG_ENDIAN_WORD(dest + 7U, can_id_word);
 
     uint8_t *data = can_frame_get_data(frame);
-    size_t len;
+    uint16_t len;
     if (frame->flags & CAN_FRAME_FLAG_FDF) {
         len = can_fd_dlc_to_size[frame->dlc];
     }
     else {
         len = frame->dlc >= 8U ? 8U : frame->dlc;
     }
-    for (size_t i = 0; i < len; i++) {
+    for (uint16_t i = 0; i < len; i++) {
         dest[11U + i] = data[i];
     }
 }
@@ -625,7 +632,7 @@ uint32_t can_recv_pending(can_controller_t *controller);
 /// @param n_bytes Size of area to write the bytes
 /// @returns number of bytes in the block
 /// @exception If the block isn't big enough then will return 0 even if there are pending events
-size_t can_recv_as_bytes(can_controller_t *controller, uint8_t *dest, size_t n_bytes);
+uint16_t can_recv_as_bytes(can_controller_t *controller, uint8_t *dest, uint16_t n_bytes);
 
 /// @brief Receive an event
 /// @param event The application-allocated place to write an event to
@@ -635,7 +642,7 @@ bool can_recv(can_controller_t *controller, can_rx_event_t *event);
 /// @brief Peeks at the event at the front of the receive FIFO
 /// @param event The application-allocated place to write an event to
 /// @returns size of CAN frame payload in bytes (if an event is a CAN frame received event)
-size_t can_recv_peek(can_controller_t *controller, can_rx_event_t *event);
+uint16_t can_recv_peek(can_controller_t *controller, can_rx_event_t *event);
 
 /// @brief Get the event timestamp
 /// @param event The event returned by can_recv()
@@ -708,7 +715,7 @@ bool can_recv_tx_event(can_controller_t *controller, can_tx_event_t *event);
 /// @param n_bytes Size of area to write the bytes
 /// @returns number of bytes in the block
 /// @exception If the block isn't big enough then will return 0 even if there are pending events
-uint32_t can_recv_tx_event_as_bytes(can_controller_t *controller, uint8_t *dest, size_t n_bytes);
+uint32_t can_recv_tx_event_as_bytes(can_controller_t *controller, uint8_t *dest, uint16_t n_bytes);
 
 /// @brief Return the number of events in the transmit event FIFO.
 /// @exception Is a minimum figure because more may have been added since the call returned.
@@ -848,6 +855,8 @@ void mcp25xxfd_irq_handler(can_controller_t *controller);
 //////////////////////////////////////////// SPI BINDING ////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifndef HOST_GENERIC
+
 // These functions must be provided by the environment to bind the drivers to specific hardware
 // and is an API for the driver binding code only.
 
@@ -876,14 +885,15 @@ inline void mcp25xxfd_spi_select(can_interface_t *interface);
 inline void mcp25xxfd_spi_deselect(can_interface_t *interface);
 
 // Write len bytes of data from src to the SPI
-inline void mcp25xxfd_spi_write(can_interface_t *interface, const uint8_t *src, size_t len);
+inline void mcp25xxfd_spi_write(can_interface_t *interface, const uint8_t *src, uint16_t len);
 
 // Write len bytes of data from cmd to the SPI port, storing the response in resp
-inline void mcp25xxfd_spi_read_write(can_interface_t *interface, const uint8_t *cmd, uint8_t *resp, size_t len);
+inline void mcp25xxfd_spi_read_write(can_interface_t *interface, const uint8_t *cmd, uint8_t *resp, uint16_t len);
 
 // Read len bytes of data to dst from the SPI port
-inline void mcp25xxfd_spi_read(can_interface_t *interface, uint8_t *dst, size_t len);
+inline void mcp25xxfd_spi_read(can_interface_t *interface, uint8_t *dst, uint16_t len);
 
+#endif // not defined HOST_GENERIC
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////// CALLBACKS /////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////

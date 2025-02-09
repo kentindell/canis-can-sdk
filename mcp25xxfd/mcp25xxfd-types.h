@@ -19,6 +19,11 @@
 
 #if defined(HOST_CANPICO)
 #include "rp2/mcp25xxfd-rp2.h"
+#elif defined(HOST_GENERIC)
+#define TIME_CRITICAL /* */
+typedef struct {
+    uint32_t _generic;
+} can_interface_t;
 #else
 #error "Unknown host"
 #endif

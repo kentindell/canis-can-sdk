@@ -143,17 +143,17 @@ static inline void mcp25xxfd_spi_deselect(can_interface_t *interface)
     sio_hw->gpio_set = (1U << interface->spi_cs);
 }
 
-static inline void mcp25xxfd_spi_write(can_interface_t *interface, const uint8_t *src, size_t len)
+static inline void mcp25xxfd_spi_write(can_interface_t *interface, const uint8_t *src, uint16_t len)
 {
     spi_write_blocking(interface->spi_device, src, len);
 }
 
-static inline void mcp25xxfd_spi_read_write(can_interface_t *interface, const uint8_t *cmd, uint8_t *resp, size_t len)
+static inline void mcp25xxfd_spi_read_write(can_interface_t *interface, const uint8_t *cmd, uint8_t *resp, uint16_t len)
 {
     spi_write_read_blocking(interface->spi_device, cmd, resp, len);
 }
 
-static inline void mcp25xxfd_spi_read(can_interface_t *interface, uint8_t *dst, size_t len)
+static inline void mcp25xxfd_spi_read(can_interface_t *interface, uint8_t *dst, uint16_t len)
 {
     spi_read_blocking(interface->spi_device, 0xaa, dst, len);
 }

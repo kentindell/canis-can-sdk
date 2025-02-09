@@ -97,7 +97,7 @@
 
 #ifdef MP_DEBUGGING
 // TODO get rid of this after debugging finished; only applies to MicroPython platform
-typedef void (*mp_print_strn_t)(void *data, const char *str, size_t len);
+typedef void (*mp_print_strn_t)(void *data, const char *str, uint16_t len);
 typedef struct _mp_print_t {
     void *data;
     mp_print_strn_t print_strn;
@@ -186,7 +186,7 @@ static void TIME_CRITICAL write_byte(can_interface_t *spi_interface, uint32_t ad
 }
 
 // Write up to 18 words (72 bytes) to the controller over SPI
-static void TIME_CRITICAL write_words(can_interface_t *spi_interface, uint16_t addr, const uint32_t words[], size_t n_words)
+static void TIME_CRITICAL write_words(can_interface_t *spi_interface, uint16_t addr, const uint32_t words[], uint16_t n_words)
 {
     // Must be called with interrupts locked
     // n_words must be 18 or less
@@ -421,7 +421,7 @@ uint32_t WEAK TIME_CRITICAL can_isr_callback_uref(can_uref_t uref)
 ////////////////////////////////////// Start of MCP251xFD drivers //////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-CONST_STORAGE size_t can_fd_dlc_to_size[] = {
+CONST_STORAGE uint16_t can_fd_dlc_to_size[] = {
     0,
     1U,
     2U,
@@ -833,8 +833,8 @@ static bool TIME_CRITICAL send_frame(can_controller_t *controller, const can_fra
             // by the hardware.
             // debug_printf("t[1]=0x%08x\n", t[1]); // TODO remove
 
-            size_t len_bytes = can_frame_get_data_len(frame);
-            size_t len_words = len_words = (len_bytes + 3U) >> 2;
+            uint16_t len_bytes = can_frame_get_data_len(frame);
+            uint16_t len_words = (len_bytes + 3U) >> 2;
             // Copy the word data into a buffer and endian-convert it
             for (uint32_t i = 0; i < len_words; i++) {
                 t[i + 2U] = mcp25xxfd_convert_bytes(frame->fd_data[i]);
@@ -1156,13 +1156,13 @@ static void TIME_CRITICAL rx_handler(can_controller_t *controller)
     frame.flags |= esi ? CAN_FRAME_FLAG_ESI : 0;
     frame.flags |= rtr ? CAN_FRAME_FLAG_RTR : 0;
 
-    size_t len_words = (can_frame_get_data_len(&frame) + 3U) >> 2;
+    uint16_t len_words = (can_frame_get_data_len(&frame) + 3U) >> 2;
     uint32_t tmp[16];
     // Copy out the payload (at most 2 words for classic CAN, up to 16 for CAN FD)
     // (also closes the SPI transaction, so must call this even if 0 payload words to read)
     read_additional_words(spi_interface, tmp, len_words);
     // Put them into the CAN frame, handling endianness
-    for (size_t i = 0; i < len_words; i++) {
+    for (uint16_t i = 0; i < len_words; i++) {
         frame.fd_data[i] = mcp25xxfd_convert_bytes(tmp[i]);
     }
 
@@ -1265,7 +1265,7 @@ void TIME_CRITICAL pop_rx_event(can_controller_t *controller, can_rx_event_t *de
 
 // Pop an event from the receive event FIFO and convert it into bytes; caller should have allocated
 // sufficient space for the whole frame length (by peeking at the front of the FIFO for its size)
-static size_t TIME_CRITICAL pop_rx_event_as_bytes(can_controller_t *controller, uint8_t *buf)
+static uint16_t TIME_CRITICAL pop_rx_event_as_bytes(can_controller_t *controller, uint8_t *buf)
 {
     // Must be called with interrupts disabled
     // Must be called with a non-empty FIFO
@@ -1280,7 +1280,7 @@ static size_t TIME_CRITICAL pop_rx_event_as_bytes(can_controller_t *controller, 
         controller->rx_fifo.head_idx = 0;
     }
 
-    size_t n_bytes = 0;
+    uint16_t n_bytes = 0;
 
     can_rx_event_t ev;
 
@@ -1311,9 +1311,9 @@ static size_t TIME_CRITICAL pop_rx_event_as_bytes(can_controller_t *controller, 
         buf[6] = frame->id_filter;
         WRITE_BIG_ENDIAN(buf + 7U, frame->canid.id);
         // Write out the payload (0-64 bytes)
-        size_t len_bytes = can_frame_get_data_len(frame);
+        uint16_t len_bytes = can_frame_get_data_len(frame);
         n_bytes = 11U + len_bytes;
-        for (size_t i = 0; i < len_bytes; i++) {
+        for (uint16_t i = 0; i < len_bytes; i++) {
             buf[11U + i] = ((uint8_t *)frame->fd_data)[i];
         }
     }
@@ -1767,7 +1767,7 @@ can_errorcode_t TIME_CRITICAL can_send_frame(can_controller_t *controller, const
 }
 
 // The caller can allocate a maximum buffer or peek to see the exact number needed
-size_t TIME_CRITICAL can_recv_as_bytes(can_controller_t *controller, uint8_t *dest, size_t n_bytes)
+uint16_t TIME_CRITICAL can_recv_as_bytes(can_controller_t *controller, uint8_t *dest, uint16_t n_bytes)
 {
     // There is a single controller set up
     if (controller == NULL) {
@@ -1780,7 +1780,7 @@ size_t TIME_CRITICAL can_recv_as_bytes(can_controller_t *controller, uint8_t *de
 
     can_interface_t *spi_interface = &controller->host_interface;
 
-    size_t result;
+    uint16_t result;
     mcp25xxfd_spi_gpio_disable_irq(spi_interface);
     if (CAN_RX_FIFO_SIZE - controller->rx_fifo.free) {
         result = pop_rx_event_as_bytes(controller, dest);
@@ -1817,7 +1817,7 @@ bool TIME_CRITICAL can_recv(can_controller_t *controller, can_rx_event_t *event)
 
 // Indicate the event and the size of the FD payload in bytes (if the event is a received FD frame)
 // at the head of the receive FIFO. FD payloads will be 12, 16, 20, 24, 32, 48 or 64 bytes.
-size_t TIME_CRITICAL can_recv_peek(can_controller_t *controller, can_rx_event_t *event)
+uint16_t TIME_CRITICAL can_recv_peek(can_controller_t *controller, can_rx_event_t *event)
 {
     // Don't need to lock interrupts because we are peeking and the head
     // won't change if a receive interrupt occurs
@@ -1868,7 +1868,7 @@ bool TIME_CRITICAL can_recv_tx_event(can_controller_t *controller, can_tx_event_
     return result;
 }
 
-uint32_t TIME_CRITICAL can_recv_tx_event_as_bytes(can_controller_t *controller, uint8_t *dest, size_t n_bytes)
+uint32_t TIME_CRITICAL can_recv_tx_event_as_bytes(can_controller_t *controller, uint8_t *dest, uint16_t n_bytes)
 {
     if (controller == NULL) {
         // If the controller has not been initialized then return no bytes
