@@ -13,3 +13,5 @@ Makefile
 .vscode/**
 hello_can.elf
 elf2uf2/**
+_deps/**
+

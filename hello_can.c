@@ -36,8 +36,10 @@
  *
  * $ minicom -b115200 -o -D /dev/ttyACM0
  *
- * (Assuming the USB serial port is /dev/ttyACM0 - it might be on a different port, depending
- * on what other serial devices are connected)
+ * Assuming the USB serial port is /dev/ttyACM0 - it might be on a different port, depending
+ * on what other serial devices are connected.
+ * 
+ * NB: to exit minicom, do CTRL-A, then X and select Yes.
  */
 
 #include <stdio.h>
@@ -50,6 +52,10 @@
 
 #include "canapi.h"
 
+#ifndef HELLO_ID
+#define HELLO_ID        (0x123U)
+#endif
+
 // Utility function to print a CAN frame to stdout
 void print_frame(can_frame_t *f, uint32_t timestamp)
 {
@@ -61,6 +67,14 @@ void print_frame(can_frame_t *f, uint32_t timestamp)
     for (uint32_t i = 0; i < len; i++) {
         printf("%02x", can_frame_get_data(f)[i]);
     }
+    printf(can_frame_is_fd(f) ? " FD" : " CC");
+    if (can_frame_is_brs(f)) {
+        printf(" BRS");
+    }
+    if (can_frame_is_esi(f)) {
+        printf(" ESI");
+    }   
+    printf(" DLC=%d ", can_frame_get_dlc(f));
     printf(" (%d)\n", timestamp);
 }
 
@@ -139,15 +153,15 @@ int main() {
 
     can_errorcode_t rc;
 
-    // Example uses 500Kbit/sec, 75% sample point
-    can_bitrate_t bitrate = {.profile = CAN_BITRATE_500K_75}; 
+    // Example uses 500Kbit/sec, 2Mbit/sec FD higher speed rate
+    can_bitrate_t bitrate = {.profile = CAN_BITRATE_FD_500K_2M}; 
 
     // Bind the Pico SPI interface to the CANPico's pin layout
     mcp25xxfd_spi_bind_canpico(&controller.host_interface);
 
     // Set up the CAN controller on the CANPico using the bound SPI interface
     while (true) {
-        rc = can_setup_controller(&controller, &bitrate, CAN_NO_FILTERS, CAN_MODE_NORMAL, CAN_OPTIONS_NONE);
+        rc = can_setup_controller(&controller, &bitrate, CAN_NO_FILTERS, CAN_MODE_NORMAL_FD, CAN_OPTIONS_NONE);
         if (rc != CAN_ERC_NO_ERROR) {
             // This can fail if the CAN transceiver isn't powered up properly. That might happen
             // if the board had 3.3V but not 5V (the transceiver needs 5V to operate). 
@@ -160,11 +174,21 @@ int main() {
         }
     }
 
-    // Create a CAN frame with 11-bit ID of 0x123 and 5 byte payload of deadbeef00
-    uint8_t data[5] = {0xdeU, 0xadU, 0xbeU, 0xefU, 0x00U};
+    // Create a CAN frame with 11-bit ID of (default 0x123) and 64 byte payload
+    uint8_t data[64] = {
+        0x54, 0x68, 0x65, 0x79, 0x20, 0x6d, 0x61, 0x79,
+        0x20, 0x74, 0x61, 0x6b, 0x65, 0x20, 0x6f, 0x75,
+        0x72, 0x20, 0x6c, 0x69, 0x76, 0x65, 0x73, 0x2c,
+        0x20, 0x62, 0x75, 0x74, 0x20, 0x74, 0x68, 0x65,
+        0x79, 0x20, 0x77, 0x69, 0x6c, 0x6c, 0x20, 0x6e,
+        0x65, 0x76, 0x65, 0x72, 0x20, 0x74, 0x61, 0x6b,
+        0x65, 0x20, 0x6f, 0x75, 0x72, 0x20, 0x66, 0x72,
+        0x65, 0x65, 0x64, 0x6f, 0x6d, 0x21, 0x21, 0x21,
+    };
 
     can_frame_t my_tx_frame;
-    can_make_frame(&my_tx_frame, false, 0x123, sizeof(data), data, false);
+    // DLC 15 = 64 bytes for an FD frame, set FDF (=CAN FD) and BRS (=Switch baud rate) flags
+    can_make_frame(&my_tx_frame, false, HELLO_ID, 15U, data, CAN_FRAME_FLAG_FDF | CAN_FRAME_FLAG_BRS);
 
     uint32_t queued_ok = 0;
 
@@ -172,6 +196,7 @@ int main() {
         // Light on
         led_on();
 
+#ifndef LISTEN_ONLY
         // Send our frame
         rc = can_send_frame(&controller, &my_tx_frame, false);
         if (rc != CAN_ERC_NO_ERROR) {
@@ -184,9 +209,10 @@ int main() {
         else {
             queued_ok++;
         }
-        can_frame_get_data(&my_tx_frame)[4]++; // Update last byte of frame payload
+        can_frame_get_data(&my_tx_frame)[63]++; // Update last byte of frame payload
 
         printf("Frames queued OK=%d\n", queued_ok);
+#endif
 
         // Wait
         sleep_ms(250);
