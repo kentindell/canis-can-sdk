@@ -20,75 +20,75 @@
 #include "../canapi.h"
 
 // Status return
-INLINE bool can_status_is_bus_off(can_status_t status)
+static INLINE bool can_status_is_bus_off(can_status_t status)
 {
     return status.status & (1U << 21);
 }
 
-INLINE bool can_status_is_error_passive(can_status_t status)
+static INLINE bool can_status_is_error_passive(can_status_t status)
 {
     return (status.status & (1U << 20)) || (status.status & (1U << 19));
 }
 
-INLINE bool can_status_is_error_warn(can_status_t status)
+static INLINE bool can_status_is_error_warn(can_status_t status)
 {
     return (status.status & (1U << 18)) || (status.status & (1U << 17));
 }
 
-INLINE uint8_t can_status_get_tec(can_status_t status)
+static INLINE uint8_t can_status_get_tec(can_status_t status)
 {
     return (status.status >> 8) & 0xffU;
 }
 
-INLINE uint8_t can_status_get_rec(can_status_t status)
+static INLINE uint8_t can_status_get_rec(can_status_t status)
 {
     return status.status & 0xffU;
 }
 
 // CAN error types
-INLINE bool can_error_is_crc(can_error_t *error)
+static INLINE bool can_error_is_crc(can_error_t *error)
 {
     return error->details & (1U << 21);
 }
 
-INLINE bool can_error_is_stuff(can_error_t *error)
+static INLINE bool can_error_is_stuff(can_error_t *error)
 {
     return error->details & (1U << 20);
 }
 
-INLINE bool can_error_is_form(can_error_t *error)
+static INLINE bool can_error_is_form(can_error_t *error)
 {
     return error->details & (1U << 19);
 }
 
-INLINE bool can_error_is_ack(can_error_t *error)
+static INLINE bool can_error_is_ack(can_error_t *error)
 {
     return error->details & (1U << 18);
 }
 
-INLINE bool can_error_is_bit1(can_error_t *error)
+static INLINE bool can_error_is_bit1(can_error_t *error)
 {
     return error->details & (1U << 17);
 }
 
-INLINE bool can_error_is_bit0(can_error_t *error)
+static INLINE bool can_error_is_bit0(can_error_t *error)
 {
     return error->details & (1U << 16);
 }
 
-INLINE bool can_error_is_bus_off(can_error_t *error)
+static INLINE bool can_error_is_bus_off(can_error_t *error)
 {
     return error->details & (1U << 23);
 }
 
-INLINE uint32_t can_error_get_frame_cnt(can_error_t *error)
+static INLINE uint32_t can_error_get_frame_cnt(can_error_t *error)
 {
     return error->details & 0xffffU;
 }
 
 // Filter construction. This function makes an ID filter that exactly matches
 // a given CAN ID.
-INLINE void can_make_id_filter(can_id_filter_t *filter, can_id_t canid)
+static INLINE void can_make_id_filter(can_id_filter_t *filter, can_id_t canid)
 {
     if (can_id_is_extended(canid)) {
         // Bit 30 is EXIDE and indicates the filter is for an extended ID
@@ -110,7 +110,7 @@ INLINE void can_make_id_filter(can_id_filter_t *filter, can_id_t canid)
 
 // Filter construction. This function makes an ID filter that allows
 // all CAN frames through.
-INLINE void can_make_id_filter_all(can_id_filter_t *filter)
+static INLINE void can_make_id_filter_all(can_id_filter_t *filter)
 {
     filter->fltobj = 0;
     filter->mask = 0;
@@ -119,26 +119,26 @@ INLINE void can_make_id_filter_all(can_id_filter_t *filter)
 
 // Filter construction. This function makes an ID filter that won't
 // match any frames.
-INLINE void can_make_id_filter_disabled(can_id_filter_t *filter)
+static INLINE void can_make_id_filter_disabled(can_id_filter_t *filter)
 {
     filter->fltobj = 0;
     filter->mask = 0;
     filter->enabled = false;
 }
 
-INLINE bool can_id_filter_is_all(can_id_filter_t *filter)
+static INLINE bool can_id_filter_is_all(can_id_filter_t *filter)
 {
     return filter->fltobj == 0 && filter->mask == 0;
 }
 
-INLINE bool can_id_filter_is_extended(can_id_filter_t *filter)
+static INLINE bool can_id_filter_is_extended(can_id_filter_t *filter)
 {
     return filter->fltobj & (1U << 30);
 }
 
 // This function returns the arbitration ID mask (a 29-bit or 11-bit
 // integer) which is either ID A or ID A concatenated with ID B.
-INLINE uint32_t can_id_filter_get_mask(can_id_filter_t *filter)
+static INLINE uint32_t can_id_filter_get_mask(can_id_filter_t *filter)
 {
     bool ide = can_id_filter_is_extended(filter);
     if (ide) {
@@ -149,7 +149,7 @@ INLINE uint32_t can_id_filter_get_mask(can_id_filter_t *filter)
     }
 }
 
-INLINE uint32_t can_id_filter_get_match(can_id_filter_t *filter)
+static INLINE uint32_t can_id_filter_get_match(can_id_filter_t *filter)
 {
     bool ide = can_id_filter_is_extended(filter);
     if (ide) {
@@ -162,7 +162,7 @@ INLINE uint32_t can_id_filter_get_match(can_id_filter_t *filter)
 
 // Filter construction. This function makes an ID filter that uses a mask and
 // match against an arbitration ID
-INLINE void can_make_id_filter_masked(can_id_filter_t *filter, bool ide, uint32_t arbitration_id_match, uint32_t arbitration_id_mask)
+static INLINE void can_make_id_filter_masked(can_id_filter_t *filter, bool ide, uint32_t arbitration_id_match, uint32_t arbitration_id_mask)
 {
     arbitration_id_match &= CAN_ID_ARBITRATION_ID;
     arbitration_id_mask &= CAN_ID_ARBITRATION_ID;
